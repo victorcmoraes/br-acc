@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { exportInvestigation, generateShareLink } from "@/api/client";
+import { exportInvestigation, exportInvestigationPDF, generateShareLink } from "@/api/client";
 import { useInvestigationStore } from "@/stores/investigation";
 
 import styles from "./InvestigationDetail.module.css";
@@ -78,6 +78,18 @@ export function InvestigationDetail() {
     URL.revokeObjectURL(url);
   }, [investigation]);
 
+  const handleExportPDF = useCallback(async () => {
+    if (!investigation) return;
+    const lang = document.documentElement.lang === "en" ? "en" : "pt";
+    const blob = await exportInvestigationPDF(investigation.id, lang);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${investigation.title}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [investigation]);
+
   const handleDelete = useCallback(async () => {
     if (!investigation) return;
     if (!confirmDelete) {
@@ -118,6 +130,9 @@ export function InvestigationDetail() {
         </button>
         <button className={styles.actionButton} onClick={handleExport} type="button">
           {t("investigation.export")}
+        </button>
+        <button className={styles.actionButton} onClick={handleExportPDF} type="button">
+          {t("investigation.exportPDF")}
         </button>
         <button className={styles.deleteButton} onClick={handleDelete} type="button">
           {confirmDelete ? t("investigation.deleteConfirm") : "X"}

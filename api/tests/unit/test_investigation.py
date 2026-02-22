@@ -1,9 +1,11 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 
 from icarus.services.neo4j_service import CypherLoader
+
+FAKE_PDF = b"%PDF-1.4 fake pdf content for testing"
 
 INVESTIGATION_CYPHER_FILES = [
     "investigation_create",
@@ -349,3 +351,98 @@ async def test_export_investigation(client: AsyncClient) -> None:
     assert "investigation" in data
     assert "annotations" in data
     assert "tags" in data
+
+
+@pytest.mark.anyio
+async def test_export_pdf_returns_pdf(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    inv_record = _mock_record({
+        "id": "inv-uuid",
+        "title": "Test",
+        "description": "",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "share_token": None,
+        "entity_ids": [],
+    })
+
+    from icarus.main import app
+
+    user_rec = _user_record()
+    driver = app.state.neo4j_driver
+    mock_session = AsyncMock()
+
+    call_count = 0
+
+    async def _run_side_effect(*args: object, **kwargs: object) -> AsyncMock:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return _fake_result([user_rec])
+        if call_count == 2:
+            # investigation_get
+            return _fake_result([inv_record])
+        # annotation_list / tag_list return empty
+        result = AsyncMock()
+
+        async def _empty_iter(self: object) -> object:  # noqa: ANN001
+            return
+            yield  # noqa: UP028
+
+        result.__aiter__ = _empty_iter
+        result.single = AsyncMock(return_value=None)
+        return result
+
+    mock_session.run = AsyncMock(side_effect=_run_side_effect)
+    driver.session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+
+    mock_html_cls = MagicMock()
+    mock_html_cls.return_value.write_pdf.return_value = FAKE_PDF
+    fake_weasyprint = MagicMock()
+    fake_weasyprint.HTML = mock_html_cls
+
+    with patch.dict("sys.modules", {"weasyprint": fake_weasyprint}):
+        response = await client.get(
+            "/api/v1/investigations/inv-uuid/export/pdf", headers=auth_headers
+        )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content[:5] == b"%PDF-"
+
+
+@pytest.mark.anyio
+async def test_export_pdf_not_found(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    from icarus.main import app
+
+    user_rec = _user_record()
+    driver = app.state.neo4j_driver
+    mock_session = AsyncMock()
+
+    call_count = 0
+
+    async def _run_side_effect(*args: object, **kwargs: object) -> AsyncMock:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return _fake_result([user_rec])
+        # investigation_get returns None
+        result = AsyncMock()
+
+        async def _empty_iter(self: object) -> object:  # noqa: ANN001
+            return
+            yield  # noqa: UP028
+
+        result.__aiter__ = _empty_iter
+        result.single = AsyncMock(return_value=None)
+        return result
+
+    mock_session.run = AsyncMock(side_effect=_run_side_effect)
+    driver.session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+
+    response = await client.get(
+        "/api/v1/investigations/nonexistent/export/pdf", headers=auth_headers
+    )
+    assert response.status_code == 404

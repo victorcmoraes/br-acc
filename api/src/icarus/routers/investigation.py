@@ -1,7 +1,7 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from neo4j import AsyncSession
 
 from icarus.dependencies import CurrentUser, get_session
@@ -16,6 +16,8 @@ from icarus.models.investigation import (
     TagCreate,
 )
 from icarus.services import investigation_service as svc
+from icarus.services.neo4j_service import execute_query_single
+from icarus.services.pdf_service import render_investigation_pdf
 
 router = APIRouter(tags=["investigations"])
 
@@ -204,3 +206,41 @@ async def export_investigation(
         "tags": [t.model_dump() for t in tags],
     }
     return JSONResponse(content=export_data)
+
+
+@router.get("/api/v1/investigations/{investigation_id}/export/pdf")
+async def export_investigation_pdf(
+    investigation_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: CurrentUser,
+    lang: Annotated[Literal["pt", "en"], Query()] = "pt",
+) -> Response:
+    investigation = await svc.get_investigation(session, investigation_id)
+    if investigation is None:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+
+    annotations = await svc.list_annotations(session, investigation_id)
+    tags = await svc.list_tags(session, investigation_id)
+
+    entities: list[dict[str, str]] = []
+    for entity_id in investigation.entity_ids:
+        record = await execute_query_single(session, "entity_by_id", {"id": entity_id})
+        if record is not None:
+            node = record["e"]
+            labels = record["entity_labels"]
+            entities.append({
+                "name": str(node.get("name", "")),
+                "type": labels[0] if labels else "",
+                "document": str(node.get("cpf", node.get("cnpj", ""))),
+            })
+
+    pdf_bytes = await render_investigation_pdf(
+        investigation, annotations, tags, entities, lang=lang
+    )
+
+    filename = f"{investigation.title}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

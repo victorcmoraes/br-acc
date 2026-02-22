@@ -283,3 +283,15 @@ export function exportInvestigation(investigationId: string): Promise<Blob> {
     return res.blob();
   });
 }
+
+export function exportInvestigationPDF(
+  investigationId: string,
+  lang = "pt",
+): Promise<Blob> {
+  const params = new URLSearchParams({ lang });
+  const url = `${API_BASE}/api/v1/investigations/${encodeURIComponent(investigationId)}/export/pdf?${params}`;
+  return fetch(url, { headers: getAuthHeaders() }).then((res) => {
+    if (!res.ok) throw new ApiError(res.status, `API error: ${res.statusText}`);
+    return res.blob();
+  });
+}
