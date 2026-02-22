@@ -11,7 +11,7 @@ from icarus_etl.base import Pipeline
 if TYPE_CHECKING:
     from neo4j import Driver
 from icarus_etl.loader import Neo4jBatchLoader
-from icarus_etl.transforms import deduplicate_rows, format_cnpj, normalize_name
+from icarus_etl.transforms import deduplicate_rows, format_cnpj, format_cpf, normalize_name
 
 logger = logging.getLogger(__name__)
 
@@ -454,7 +454,7 @@ class CNPJPipeline(Pipeline):
             lambda b: lookup[b][0] if b in lookup else format_cnpj(b + "000100"),
         )
         df["nome"] = df["nome_socio"].astype(str).map(normalize_name)
-        df["cpf"] = df["cpf_cnpj_socio"].astype(str)
+        df["cpf"] = df["cpf_cnpj_socio"].astype(str).map(format_cpf)
         df["tipo"] = df["identificador_socio"].astype(str)
         df["qualificacao"] = df["qualificacao_socio"].astype(str).map(
             lambda c: self._resolve_reference("qualificacoes", c),
@@ -479,7 +479,7 @@ class CNPJPipeline(Pipeline):
         df = df.copy()
         df["cnpj"] = df["cnpj"].astype(str).map(format_cnpj)
         df["nome"] = df["nome_socio"].astype(str).map(normalize_name)
-        df["cpf"] = df["cpf_socio"].astype(str)
+        df["cpf"] = df["cpf_socio"].astype(str).map(format_cpf)
         df["tipo"] = df["tipo_socio"].astype(str)
         df["qualificacao"] = df.get(
             "qualificacao_socio", pd.Series("", index=df.index),

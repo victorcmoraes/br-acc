@@ -32,6 +32,7 @@ class Neo4jBatchLoader:
         rows: list[dict[str, Any]],
         key_field: str,
     ) -> int:
+        rows = [r for r in rows if r.get(key_field)]
         props = ", ".join(
             f"n.{k} = row.{k}" for k in rows[0] if k != key_field
         ) if rows else ""
@@ -53,6 +54,7 @@ class Neo4jBatchLoader:
         target_key: str,
         properties: list[str] | None = None,
     ) -> int:
+        rows = [r for r in rows if r.get("source_key") and r.get("target_key")]
         props = ""
         if properties:
             prop_str = ", ".join(f"r.{p} = row.{p}" for p in properties)

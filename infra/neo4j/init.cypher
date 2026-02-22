@@ -54,6 +54,15 @@ CREATE INDEX election_composite IF NOT EXISTS
 CREATE INDEX amendment_object IF NOT EXISTS
   FOR (a:Amendment) ON (a.object);
 
+CREATE INDEX company_cnae_principal IF NOT EXISTS
+  FOR (c:Company) ON (c.cnae_principal);
+
+CREATE INDEX contract_contracting_org IF NOT EXISTS
+  FOR (c:Contract) ON (c.contracting_org);
+
+CREATE INDEX contract_date IF NOT EXISTS
+  FOR (c:Contract) ON (c.date);
+
 // ── Fulltext Search Index ───────────────────────────────
 CREATE FULLTEXT INDEX entity_search IF NOT EXISTS
   FOR (n:Person|Company)

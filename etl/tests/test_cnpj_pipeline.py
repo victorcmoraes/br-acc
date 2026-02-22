@@ -184,13 +184,49 @@ def test_transform_rf_format_extracts_relationships() -> None:
 
 
 def test_transform_rf_format_preserves_partial_cpfs() -> None:
-    """Partial CPFs from Receita Federal are stored as-is for entity resolution."""
+    """Partial CPFs from Receita Federal have non-digits stripped by format_cpf.
+
+    RF partial CPFs like '***123456**' become '123456' (digits only, not 11 chars
+    so format_cpf returns raw digits). This preserves enough info for entity resolution.
+    """
     pipeline = _make_pipeline()
     pipeline.extract()
     pipeline.transform()
 
     cpfs = [p["cpf"] for p in pipeline.partners]
-    assert any("***" in cpf or "*" in cpf for cpf in cpfs)
+    # After format_cpf, non-digit chars are stripped; partial CPFs become digit-only
+    assert all(cpf.isdigit() for cpf in cpfs)
+    # Partial CPFs don't have 11 digits, so they won't be in XXX.XXX.XXX-XX format
+    assert any(len(cpf) != 11 and "." not in cpf for cpf in cpfs)
+
+
+def test_transform_socios_rf_formats_cpf() -> None:
+    """Full 11-digit CPFs in RF socios are formatted as XXX.XXX.XXX-XX."""
+    pipeline = _make_pipeline()
+    pipeline.extract()
+    pipeline._build_estab_lookup(pipeline._raw_estabelecimentos)
+
+    # Inject a full 11-digit CPF into the socios dataframe
+    pipeline._raw_socios = pd.DataFrame([
+        {
+            "cnpj_basico": "00000000",
+            "identificador_socio": "2",
+            "nome_socio": "TEST PERSON",
+            "cpf_cnpj_socio": "12345678901",
+            "qualificacao_socio": "22",
+            "data_entrada": "20200101",
+            "pais": "0",
+            "representante_legal": "",
+            "nome_representante": "0",
+            "qualificacao_representante": "0",
+            "faixa_etaria": "6",
+        },
+    ])
+    partners, rels = pipeline._transform_socios_rf(pipeline._raw_socios)
+
+    assert len(partners) == 1
+    assert partners[0]["cpf"] == "123.456.789-01"
+    assert rels[0]["source_key"] == "123.456.789-01"
 
 
 # --- BQ format (extract + transform) ---
